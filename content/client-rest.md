@@ -23,6 +23,20 @@ It needs **Node 22.19 or newer**, since it sends requests through `detritus-rest
 
 Create a `Client` with your token and call methods on it:
 
+```ts
+import { Client } from 'detritus-client-rest';
+
+const client = new Client(process.env.TOKEN!);
+
+(async () => {
+  const user = await client.fetchUser('300505364032389122');
+  console.log(user.username);
+
+  const message = await client.createMessage(channelId, 'Hello!');
+  setTimeout(() => client.deleteMessage(channelId, message.id), 5000);
+})();
+```
+
 ```js
 const { Client } = require('detritus-client-rest');
 
@@ -57,6 +71,18 @@ await client.editGuildMember(guildId, userId, {
 ## Files and attachments
 
 Upload files with `file` or `files`. A file's `value` can be a `Buffer`, a string, or a readable stream.
+
+```ts
+import * as fs from 'fs';
+
+await client.createMessage(channelId, {
+  content: 'Here are your files',
+  file: {filename: 'file.txt', value: Buffer.from('Some file content')},
+  files: [
+    {filename: 'image.png', value: fs.createReadStream('./image.png')},
+  ],
+});
+```
 
 ```js
 const fs = require('fs');
@@ -104,6 +130,18 @@ The client tracks ratelimit buckets from Discord's headers and waits automatical
 
 A failed request rejects with an `HTTPError`. When Discord sent a JSON error body, it's a `DiscordHTTPError` with Discord's error `code`, the per-field `errors`, the `raw` body and the `response`:
 
+```ts
+try {
+  await client.fetchMessage(channelId, '1');
+} catch (error: any) {
+  if (error.response) {
+    console.log(error.response.statusCode); // 404
+    console.log(error.code);                // 10008, "Unknown Message"
+    console.log(error.errors);              // field-level errors, for 400s
+  }
+}
+```
+
 ```js
 try {
   await client.fetchMessage(channelId, '1');
@@ -143,6 +181,21 @@ Payload shapes are in `RestClientEvents`, and the event names are in `Constants.
 
 For anything without a method, call `request()` with a route. Using a route instead of a full URL keeps ratelimit bucketing correct, because the bucket is keyed on the path template, not the filled-in ids.
 
+```ts
+import { Client, Endpoints } from 'detritus-client-rest';
+
+const client = new Client(process.env.TOKEN!);
+
+const message = await client.request({
+  body: {content: 'Sent with a custom request'},
+  route: {
+    method: 'post',
+    path: Endpoints.Api.CHANNEL_MESSAGES, // '/channels/:channelId/messages'
+    params: {channelId},
+  },
+});
+```
+
 ```js
 const { Client, Endpoints } = require('detritus-client-rest');
 
@@ -163,6 +216,14 @@ const message = await client.request({
 ## Endpoints and CDN URLs
 
 `Endpoints` holds every path the client uses, plus helpers for building links:
+
+```ts
+import { Endpoints } from 'detritus-client-rest';
+
+Endpoints.Api.CHANNEL_MESSAGES;              // '/channels/:channelId/messages'
+Endpoints.CDN.URL + Endpoints.CDN.AVATAR(userId, avatarHash, 'png');
+Endpoints.Routes.URL + Endpoints.Routes.MESSAGE(guildId, channelId, messageId);
+```
 
 ```js
 const { Endpoints } = require('detritus-client-rest');

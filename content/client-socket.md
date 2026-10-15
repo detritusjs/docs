@@ -33,6 +33,29 @@ Optional packages add features:
 
 Create a `Gateway.Socket` with your token and options, then `connect()` to a gateway URL.
 
+```ts
+import { Constants, Gateway } from 'detritus-client-socket';
+
+const socket = new Gateway.Socket(process.env.TOKEN!, {
+  intents: ['GUILDS', 'GUILD_MESSAGES', 'MESSAGE_CONTENT'],
+  presence: {
+    activity: {name: 'something cool', type: Constants.GatewayActivityTypes.WATCHING},
+    status: Constants.GatewayPresenceStatuses.DND,
+  },
+});
+
+socket.on('ready', () => console.log('ready'));
+socket.on('packet', (packet) => {
+  if (packet.t === Constants.GatewayDispatchEvents.MESSAGE_CREATE) {
+    console.log(`${packet.d.author.username}: ${packet.d.content}`);
+  }
+});
+socket.on('close', ({code, reason}) => console.log('closed', code, reason));
+socket.on('warn', console.error);
+
+socket.connect('wss://gateway.discord.gg/');
+```
+
 ```js
 const { Constants, Gateway } = require('detritus-client-socket');
 
@@ -93,6 +116,44 @@ Anything else can be sent raw with `socket.send(op, data)`, using `Constants.Gat
 
 `voiceConnect()` sends the voice state update, waits for the voice server, and resolves with a `Media.Socket`. Its `transportReady` event fires with the `MediaUdp.Socket` once audio can flow.
 
+```ts
+import { Constants, Gateway } from 'detritus-client-socket';
+
+const socket = new Gateway.Socket(process.env.TOKEN!, {compress: true});
+
+socket.on('ready', async () => {
+  const media = await socket.voiceConnect(guildId, channelId, {receive: true});
+  if (!media) {
+    throw new Error('Failed to join the voice channel');
+  }
+  media.on('warn', console.error);
+
+  let isSetup = false;
+  media.on('transportReady', (transport) => {
+    media.sendSpeaking({voice: true});
+    // a silence frame tells Discord to start sending us audio
+    transport.sendAudioSilenceFrame();
+    if (isSetup) {
+      // fires again after reconnects, but the transport is reused
+      return;
+    }
+    isSetup = true;
+
+    // repeat one user's audio back into the channel
+    transport.on('packet', (packet) => {
+      if (packet.userId === repeatUserId && packet.rtp) {
+        transport.sendAudioFrame(packet.data, {
+          sequence: packet.rtp.header.sequence,
+          timestamp: packet.rtp.header.timestamp,
+        });
+      }
+    });
+  });
+});
+
+socket.connect('wss://gateway.discord.gg/');
+```
+
 ```js
 const { Constants, Gateway } = require('detritus-client-socket');
 
@@ -146,6 +207,19 @@ const encoder = new OpusEncoder(mixer.format.sampleRate, mixer.format.channels);
 
 // for every received packet: mixer.push(userId, decoder.decode(packet.data), packet.rtp.header.timestamp)
 mixer.on('data', (frame: Buffer) => {
+  transport.sendAudioFrame(encoder.encode(frame));
+});
+```
+
+```js
+const { OpusEncoder } = require('@discordjs/opus');
+const { MediaMixer } = require('detritus-client-socket');
+
+const mixer = new MediaMixer.AudioMixer();
+const encoder = new OpusEncoder(mixer.format.sampleRate, mixer.format.channels);
+
+// for every received packet: mixer.push(userId, decoder.decode(packet.data), packet.rtp.header.timestamp)
+mixer.on('data', (frame) => {
   transport.sendAudioFrame(encoder.encode(frame));
 });
 ```

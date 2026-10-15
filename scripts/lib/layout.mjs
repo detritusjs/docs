@@ -60,7 +60,7 @@ export function page({base, title, description, body, active, packages, searchPa
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="${base}assets/style.css">
-<script>document.documentElement.classList.add('js')</script>
+<script>document.documentElement.classList.add('js');try{if(localStorage.getItem('detritus-docs:code-lang')==='js')document.documentElement.setAttribute('data-code-lang','js')}catch(e){}</script>
 </head>
 <body data-base="${base}" data-package="${searchPackage || ''}">
 <a class="skip-link" href="#main">Skip to content</a>
@@ -127,7 +127,8 @@ function footer({base, packages}) {
 
 
 // The darker band at the top of every docs page: eyebrow, title, description, package switcher and search
-export function docsHero({base, packages, activeSlug, eyebrow, title, titleHtml, description, badges = ''}) {
+// `langSwitch` adds the TypeScript / JavaScript picker, for pages with examples in both
+export function docsHero({base, packages, activeSlug, eyebrow, title, titleHtml, description, badges = '', langSwitch = false}) {
   const tabs = packages.map((pkg) => (
     `<a href="${base}${pkg.slug}/" class="seg-item${pkg.slug === activeSlug ? ' is-active' : ''}"${pkg.slug === activeSlug ? ' aria-current="page"' : ''}>${escapeHtml(pkg.title)}</a>`
   )).join('');
@@ -144,10 +145,17 @@ export function docsHero({base, packages, activeSlug, eyebrow, title, titleHtml,
         <kbd class="search-kbd">/</kbd>
         <div class="search-results" role="listbox" hidden></div>
       </div>
+      ${langSwitch ? LANG_SWITCH : ''}
     </div>
   </div>
 </section>`;
 }
+
+
+export const LANG_SWITCH = `<div class="seg lang-switch" role="group" aria-label="Example language">
+        <button type="button" class="seg-item" data-set-lang="ts" aria-pressed="true">TypeScript</button>
+        <button type="button" class="seg-item" data-set-lang="js" aria-pressed="false">JavaScript</button>
+      </div>`;
 
 
 export function docsBody({sidebar, content, mobileToc = ''}) {

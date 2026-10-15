@@ -200,6 +200,7 @@ button { font: inherit; color: inherit; }
 .window-tab:hover { color: var(--color-muted); }
 .window-tab[aria-selected="true"] { background: var(--color-deep); color: var(--color-white); box-shadow: inset 0 -2px 0 var(--color-brand); }
 .window-tab .icon { width: 13px; height: 13px; }
+.window-tabs .lang-tabs { align-self: center; flex-shrink: 0; margin: 0 8px 0 auto; }
 .window-body .code-block { border-radius: 0; background: transparent; }
 .window-body .code-block pre { padding: 16px 44px 18px 18px; font-size: 13px; min-height: 360px; }
 .window-caption { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--color-line-strong); font-size: 12px; color: var(--color-subtle); }
@@ -410,6 +411,20 @@ tr:last-child td { border-bottom: 0; }
 .copy-btn:hover { background: var(--color-surface-3); color: var(--color-white); }
 .copy-btn.is-copied { color: var(--color-success); opacity: 1; }
 @media (hover: none) { .copy-btn { opacity: 1; } }
+
+/* examples written in both TypeScript and JavaScript, <html data-code-lang="js"> picks JavaScript */
+:root:not([data-code-lang="js"]) [data-variant="js"],
+:root[data-code-lang="js"] [data-variant="ts"] { display: none; }
+.code-group { border-radius: var(--radius-md); background: var(--color-deep); min-width: 0; }
+.code-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 0 12px; font-family: var(--font-mono); font-size: 12px; color: var(--color-subtle); }
+.code-group .code-block pre { padding-top: 6px; }
+.lang-tabs { display: flex; gap: 2px; margin-left: auto; padding: 2px; border-radius: var(--radius-sm); background: var(--color-surface); }
+.lang-tabs button { padding: 1px 7px; border: 0; border-radius: 3px; background: transparent; color: var(--color-subtle); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; transition: color .15s, background-color .15s; }
+.lang-tabs button:hover { color: var(--color-white); }
+button.seg-item { border: 0; background: transparent; font: inherit; font-size: 14px; cursor: pointer; }
+:root:not([data-code-lang="js"]) [data-set-lang="ts"],
+:root[data-code-lang="js"] [data-set-lang="js"] { background: var(--color-surface-3); color: var(--color-white); }
+:root:not([data-code-lang="js"]) .lang-switch [data-set-lang="ts"], :root[data-code-lang="js"] .lang-switch [data-set-lang="js"] { box-shadow: 0 1px 2px rgb(0 0 0 / .3); }
 .tk-k { color: var(--tk-keyword); }
 .tk-s { color: var(--tk-string); }
 .tk-n { color: var(--tk-number); }

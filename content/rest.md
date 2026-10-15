@@ -24,6 +24,18 @@ It requires **Node 22.19 or newer**, and throws on import on anything older.
 
 `client.request()` takes a URL or an options object and resolves with a `Response`. Read the body with `json()`, `text()`, `buffer()` or `arrayBuffer()`.
 
+```ts
+import { Client } from 'detritus-rest';
+
+const client = new Client();
+
+(async () => {
+  const response = await client.request('https://nghttp2.org/httpbin/get');
+  const body = await response.json();
+  console.log(response.statusCode, body);
+})();
+```
+
 ```js
 const { Client } = require('detritus-rest');
 
@@ -103,6 +115,15 @@ A file's `value` can be a string, `Buffer`, `Blob` or a readable stream; streams
 ## Timeouts and aborting
 
 `timeout` (in milliseconds) aborts the request if it, or reading its body, takes too long. It rejects with a `TimeoutError`. You can also pass your own `signal`:
+
+```ts
+try {
+  const response = await client.get('https://nghttp2.org/httpbin/delay/10', {timeout: 2000});
+  await response.json();
+} catch (error: any) {
+  console.log(error.name); // 'TimeoutError'
+}
+```
 
 ```js
 try {

@@ -2,7 +2,6 @@
 // Also records the package's version and git branch so the build can link to the right source.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,22 +13,16 @@ const REPO_ROOT = path.resolve(DOCS_ROOT, '..');
 const DATA_DIR = path.join(DOCS_ROOT, 'data');
 
 
-// prefer our own typedoc, fall back to one installed in a sibling package so `npm i` here is optional
+// the packages don't install typedoc anymore, it only comes from the docs folder
 async function loadTypedoc() {
-  const candidates = [
-    path.join(DOCS_ROOT, 'package.json'),
-    ...PACKAGES.map((pkg) => path.join(REPO_ROOT, pkg.dir, 'package.json')),
-  ];
-  for (const candidate of candidates) {
-    try {
-      const require = createRequire(candidate);
-      const resolved = require.resolve('typedoc');
-      return await import(resolved);
-    } catch (error) {
-      continue;
+  try {
+    return await import('typedoc');
+  } catch (error) {
+    if (error.code === 'ERR_MODULE_NOT_FOUND') {
+      throw new Error('Could not find typedoc, run `npm install` inside the docs folder.');
     }
+    throw error;
   }
-  throw new Error('Could not find typedoc, run `npm install` inside the docs folder.');
 }
 
 function gitBranch(cwd) {

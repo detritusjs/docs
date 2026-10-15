@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { escapeHtml } from './lib/highlight.mjs';
 import { docsBody, docsHero, icon, page, LINKS, LOGO } from './lib/layout.mjs';
-import { codeBlock, inline, markdown, slugify, ICON_COPY } from './lib/markdown.mjs';
+import { codeBlock, inline, markdown, slugify, ICON_COPY, LANG_TABS } from './lib/markdown.mjs';
 import { anchorId, DocsModel, isInternalName, Kind, KIND_LABEL } from './lib/model.mjs';
 import { firstSentence, renderComment, stripTags, TypeRenderer } from './lib/types.mjs';
 import { PACKAGES } from './packages.mjs';
@@ -532,6 +532,7 @@ function renderContainerPage(node, pkg, guide) {
     titleHtml: isRoot ? escapeHtml(`Detritus ${pkg.title}`) : `<span class="mono">${escapeHtml(node.__path.join('.'))}</span>`,
     badges: isRoot ? '' : kindBadge(node.kind),
     description,
+    langSwitch: isRoot && guide.sections.some((section) => section.html.includes('class="code-group"')),
   });
 
   const body = hero + docsBody({
@@ -777,12 +778,35 @@ function packageStats(pkg) {
   return counts;
 }
 
+// shown in TypeScript or JavaScript, following the reader's pick on the guide pages
 const HOME_SAMPLES = [
   {
-    file: 'commands.js',
+    file: 'commands',
     caption: 'Prefix commands with a <code class="inline-code">CommandClient</code>',
     link: 'client/#guide-prefix-commands',
-    code: `const { CommandClient } = require('detritus-client');
+    ts: `import { CommandClient } from 'detritus-client';
+
+const commandClient = new CommandClient(process.env.TOKEN!, {
+  prefix: '..',
+});
+
+commandClient.add({
+  name: 'ping',
+  run: (context) => context.reply('pong!'),
+});
+
+commandClient.add({
+  name: 'owner',
+  onBefore: (context) => context.client.isOwner(context.userId),
+  onCancel: (context) => context.reply('Owner only, sorry.'),
+  run: (context) => context.reply('Hello, owner.'),
+});
+
+(async () => {
+  const client = await commandClient.run();
+  console.log(\`Running \${client.shardCount} shards\`);
+})();`,
+    js: `const { CommandClient } = require('detritus-client');
 
 const commandClient = new CommandClient(process.env.TOKEN, {
   prefix: '..',
@@ -806,10 +830,30 @@ commandClient.add({
 })();`,
   },
   {
-    file: 'slash.js',
+    file: 'slash',
     caption: 'Slash commands, synced with Discord on startup',
     link: 'client/#guide-slash-commands',
-    code: `const { Constants, InteractionCommandClient } = require('detritus-client');
+    ts: `import { Constants, Interaction, InteractionCommandClient } from 'detritus-client';
+const { ApplicationCommandOptionTypes } = Constants;
+
+const interactionClient = new InteractionCommandClient(process.env.TOKEN!);
+
+interactionClient.add({
+  name: 'avatar',
+  description: 'Show someone\\'s avatar',
+  options: [
+    {
+      name: 'user',
+      description: 'Whose avatar to show',
+      type: ApplicationCommandOptionTypes.USER,
+      default: (context: Interaction.InteractionContext) => context.user,
+    },
+  ],
+  run: (context, args) => context.editOrRespond(args.user.avatarUrl),
+});
+
+interactionClient.run();`,
+    js: `const { Constants, InteractionCommandClient } = require('detritus-client');
 const { ApplicationCommandOptionTypes } = Constants;
 
 const interactionClient = new InteractionCommandClient(process.env.TOKEN);
@@ -831,10 +875,27 @@ interactionClient.add({
 interactionClient.run();`,
   },
   {
-    file: 'events.js',
+    file: 'events',
     caption: 'Gateway events, cached into typed structures',
     link: 'client/#guide-events',
-    code: `const { ShardClient } = require('detritus-client');
+    ts: `import { ShardClient } from 'detritus-client';
+
+const client = new ShardClient(process.env.TOKEN!, {
+  gateway: {intents: ['GUILDS', 'GUILD_MESSAGES', 'MESSAGE_CONTENT']},
+});
+
+client.on('guildCreate', ({guild}) => {
+  console.log(\`Joined \${guild.name} (\${guild.memberCount} members)\`);
+});
+
+client.on('messageCreate', async ({message}) => {
+  if (message.content === '!ping') {
+    await message.reply('pong!');
+  }
+});
+
+client.run();`,
+    js: `const { ShardClient } = require('detritus-client');
 
 const client = new ShardClient(process.env.TOKEN, {
   gateway: {intents: ['GUILDS', 'GUILD_MESSAGES', 'MESSAGE_CONTENT']},
@@ -853,10 +914,23 @@ client.on('messageCreate', async ({message}) => {
 client.run();`,
   },
   {
-    file: 'rest.js',
+    file: 'rest',
     caption: 'Just the REST API, no gateway connection',
     link: 'client-rest/',
-    code: `const { Client } = require('detritus-client-rest');
+    ts: `import { Client } from 'detritus-client-rest';
+
+const client = new Client(process.env.TOKEN!);
+
+(async () => {
+  // ratelimits are queued and retried for you
+  const message = await client.createMessage(channelId, {
+    content: 'Sent over plain REST',
+    embed: {description: 'No websocket needed'},
+  });
+
+  await client.createReaction(channelId, message.id, '👍');
+})();`,
+    js: `const { Client } = require('detritus-client-rest');
 
 const client = new Client(process.env.TOKEN);
 
@@ -900,8 +974,8 @@ function renderLanding() {
 </div>`;
 
   const window = `<div class="window" data-tabs>
-  <div class="window-tabs" role="tablist" aria-label="Examples">${HOME_SAMPLES.map((sample, index) => `<button type="button" class="window-tab" role="tab" aria-selected="${index === 0}" data-tab="${index}">${icon('file-code')}${sample.file}</button>`).join('')}</div>
-  ${HOME_SAMPLES.map((sample, index) => `<div class="window-body" role="tabpanel" data-panel="${index}"${index ? ' hidden' : ''}>${codeBlock(sample.code, 'js')}<div class="window-caption">${sample.caption}<span class="sep">·</span><a href="${BASE}${sample.link}">Read more</a></div></div>`).join('')}
+  <div class="window-tabs" role="tablist" aria-label="Examples">${HOME_SAMPLES.map((sample, index) => `<button type="button" class="window-tab" role="tab" aria-selected="${index === 0}" data-tab="${index}">${icon('file-code')}<span data-variant="ts">${sample.file}.ts</span><span data-variant="js">${sample.file}.js</span></button>`).join('')}${LANG_TABS}</div>
+  ${HOME_SAMPLES.map((sample, index) => `<div class="window-body" role="tabpanel" data-panel="${index}"${index ? ' hidden' : ''}>${codeBlock(sample.ts, 'ts', {variant: 'ts'})}${codeBlock(sample.js, 'js', {variant: 'js'})}<div class="window-caption">${sample.caption}<span class="sep">·</span><a href="${BASE}${sample.link}">Read more</a></div></div>`).join('')}
 </div>`;
 
   const layerItem = ({slug, children}) => {

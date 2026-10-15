@@ -61,6 +61,38 @@
     copyText(source, button);
   });
 
+  // ---------- example language (TypeScript / JavaScript) ----------
+  // the inline script in <head> applies the saved choice before the first paint, css does the hiding
+  var root = document.documentElement;
+  var langKey = 'detritus-docs:code-lang';
+  function syncLangButtons() {
+    var lang = root.getAttribute('data-code-lang') === 'js' ? 'js' : 'ts';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-set-lang]'), function (button) {
+      button.setAttribute('aria-pressed', String(button.getAttribute('data-set-lang') === lang));
+    });
+  }
+  syncLangButtons();
+  document.addEventListener('click', function (event) {
+    var button = event.target.closest('[data-set-lang]');
+    if (!button) {
+      return;
+    }
+    var lang = button.getAttribute('data-set-lang');
+    // examples above the clicked one can change height, keep the clicked one where it was
+    var before = button.getBoundingClientRect().top;
+    if (lang === 'js') {
+      root.setAttribute('data-code-lang', 'js');
+    } else {
+      root.removeAttribute('data-code-lang');
+    }
+    store(langKey, lang);
+    syncLangButtons();
+    var shift = button.getBoundingClientRect().top - before;
+    if (shift) {
+      window.scrollBy(0, shift);
+    }
+  });
+
   // ---------- inherited / internal toggles ----------
   var toggleKeys = {inherited: 'detritus-docs:hide-inherited', internal: 'detritus-docs:show-internal'};
   var hideInherited = store(toggleKeys.inherited) === '1';

@@ -16,7 +16,7 @@ detritusjs/
 
 ```bash
 cd docs
-npm install          # optional, `extract` falls back to the typedoc installed in ../client
+npm install          # installs typedoc, the packages don't ship it
 npm run docs         # extract + build
 npm run serve        # http://localhost:4173
 ```
@@ -61,13 +61,31 @@ To rebuild right after a package changes, add a step like this to that package's
 
 | Path | What it is |
 | --- | --- |
-| `content/<package>.md` | The guide for each package. The text before the first `##` is the page description; every `##` becomes a card and a sidebar entry. Inline code like `` `ShardClient` `` or `` `Structures.Message` `` links to the reference automatically. |
+| `content/<package>.md` | The guide for each package. The text before the first `##` is the page description; every `##` becomes a card and a sidebar entry. Inline code like `` `ShardClient` `` or `` `Structures.Message` `` links to the reference automatically. A ` ```ts ` fence followed directly by a ` ```js ` fence is one example in both languages (see below). |
 | `content/summaries.json` | One-line descriptions for symbols that have no doc comment in the source. Doc comments win when they exist. |
 | `scripts/packages.mjs` | The list of packages, their npm names, repos and landing page blurbs. |
 | `scripts/extract.mjs` | Runs TypeDoc. |
 | `scripts/build.mjs` | Renders every page and the search index. |
 | `scripts/lib/` | The markdown renderer, syntax highlighter, TypeDoc type renderer and page chrome. |
-| `assets/` | `style.css` (a Discord-style dark palette) and `app.js` (search, copy buttons, member toggles, scroll spy). |
+| `assets/` | `style.css` (a Discord-style dark palette) and `app.js` (search, copy buttons, member toggles, the TS / JS switch, scroll spy). |
+
+## TypeScript and JavaScript examples
+
+Guide examples can be shown in either language. Write the TypeScript version, then the JavaScript version right after it, with nothing but blank lines between them:
+
+````md
+```ts commands/roll.ts
+import { Command } from 'detritus-client';
+...
+```
+
+```js commands/roll.js
+const { Command } = require('detritus-client');
+...
+```
+````
+
+The two become one block with a `TS` / `JS` switch, and the guide page gets a TypeScript / JavaScript picker at the top. TypeScript is the default; the reader's pick is remembered per browser and applies on every page, including the home page samples (`HOME_SAMPLES` in `scripts/build.mjs`, which have `ts` and `js` versions). A fence title (like `commands/roll.ts`) is shown per language. A fence on its own, or one followed by a fence in the same language, is shown no matter which language is picked, which suits short snippets that read the same either way.
 
 ## Reference pages
 

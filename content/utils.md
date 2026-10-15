@@ -25,6 +25,23 @@ npm install detritus-utils
 
 `BaseCollection` is a `Map` plus the array methods you keep reaching for: `filter`, `find`, `map`, `some`, `every`, `reduce`, `sort`, `first`, `toArray`, and a `length` property.
 
+```ts
+import { BaseCollection } from 'detritus-utils';
+
+interface User {
+  id: string,
+  name: string,
+}
+
+const users = new BaseCollection<string, User>();
+users.set('1', {id: '1', name: 'cake'});
+users.set('2', {id: '2', name: 'dan'});
+
+users.find((user) => user.name === 'dan');   // {id: '2', ...}
+users.map((user) => user.name);              // ['cake', 'dan']
+users.length;                                // 2
+```
+
 ```js
 const { BaseCollection } = require('detritus-utils');
 
@@ -57,6 +74,21 @@ sessions.get(token); // reading an entry counts as using it
 
 `EventSpewer` is an event emitter whose `subscribe()` returns an `EventSubscription`. Removing a subscription is easier than keeping a reference to the listener around:
 
+```ts
+import { EventSpewer } from 'detritus-utils';
+
+class Thing extends EventSpewer {}
+
+const thing = new Thing();
+const subscription = thing.subscribe('update', (payload) => console.log(payload));
+
+thing.emit('update', {value: 1});
+subscription.remove();
+
+// or drop every subscription at once
+thing.removeAllSubscriptions();
+```
+
 ```js
 const { EventSpewer } = require('detritus-utils');
 
@@ -78,6 +110,19 @@ Every Detritus client, socket and REST client is an `EventSpewer`, so this works
 
 Snowflakes are Discord's ids: a timestamp plus worker, process and sequence numbers packed into a 64-bit integer. `Snowflake` works with them as strings.
 
+```ts
+import { Snowflake } from 'detritus-utils';
+
+Snowflake.timestamp('175928847299117063');   // 1462015105796, ms since 1970
+new Date(Snowflake.timestamp(message.id));   // when the message was sent
+
+Snowflake.deconstruct('175928847299117063');
+// {id, timestamp, workerId, processId, sequence}
+
+// make an id for a point in time, handy for `before`/`after` paging
+Snowflake.generate({timestamp: Date.now() - 24 * 60 * 60 * 1000}).id;
+```
+
 ```js
 const { Snowflake } = require('detritus-utils');
 
@@ -97,6 +142,21 @@ Every function takes an `epoch` option for snowflakes that aren't Discord's. The
 
 `Timers.Timeout` and `Timers.Interval` wrap `setTimeout` and `setInterval` so they can be stopped and restarted without keeping track of handles:
 
+```ts
+import { Timers } from 'detritus-utils';
+
+const timeout = new Timers.Timeout();
+timeout.start(5000, () => console.log('5 seconds passed'));
+timeout.start(1000, () => console.log('restarted, only 1 second now'));
+timeout.stop();
+
+const interval = new Timers.Interval();
+interval.start(1000, () => console.log('tick'));
+interval.unref(); // don't keep the process alive just for this
+
+await Timers.sleep(250);
+```
+
 ```js
 const { Timers } = require('detritus-utils');
 
@@ -113,6 +173,13 @@ await Timers.sleep(250);
 ```
 
 ## Tools
+
+```ts
+import { Tools } from 'detritus-utils';
+
+// which shard a guild's events come in on
+Tools.guildIdToShardId('175928847299117063', 16); // 4
+```
 
 ```js
 const { Tools } = require('detritus-utils');

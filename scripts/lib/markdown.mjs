@@ -1,5 +1,6 @@
 // A small markdown renderer for the guides and doc comments.
 // Supports headings, paragraphs, fenced code, lists, blockquote callouts, pipe tables, and inline code/links/emphasis.
+// A ```ts fence followed by a ```js fence (or the other way around) is one example written in both languages.
 import { escapeHtml, highlight } from './highlight.mjs';
 
 
@@ -14,12 +15,52 @@ export function slugify(value) {
 
 export const ICON_COPY = '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
 
-export function codeBlock(code, language = '', {title} = {}) {
+export function codeBlock(code, language = '', {title, variant} = {}) {
   const lang = language ? ` data-lang="${escapeHtml(language)}"` : '';
+  const variantAttr = variant ? ` data-variant="${variant}"` : '';
   const head = title
     ? `<div class="code-title"><span>${escapeHtml(title)}</span></div>`
     : '';
-  return `<div class="code-block${title ? ' has-title' : ''}"${lang}>${head}<pre><code>${highlight(code.replace(/\n+$/, ''), language)}</code></pre><button type="button" class="copy-btn" aria-label="Copy code">${ICON_COPY}</button></div>`;
+  return `<div class="code-block${title ? ' has-title' : ''}"${lang}${variantAttr}>${head}<pre><code>${highlight(code.replace(/\n+$/, ''), language)}</code></pre><button type="button" class="copy-btn" aria-label="Copy code">${ICON_COPY}</button></div>`;
+}
+
+
+const VARIANTS = {ts: 'ts', typescript: 'ts', js: 'js', javascript: 'js'};
+
+export function codeVariant(language) {
+  return VARIANTS[String(language).toLowerCase()] || null;
+}
+
+// the small TS / JS switch on every example, app.js keeps them all in sync
+export const LANG_TABS = `<div class="lang-tabs" role="group" aria-label="Example language">${['ts', 'js'].map((variant) => (
+  `<button type="button" data-set-lang="${variant}" aria-pressed="${variant === 'ts'}" title="Show ${variant === 'ts' ? 'TypeScript' : 'JavaScript'} examples">${variant.toUpperCase()}</button>`
+)).join('')}</div>`;
+
+// The same example in TypeScript and JavaScript, `blocks` is [{code, language, title}].
+// Both are in the page, css shows the one matching <html data-code-lang>, which defaults to ts.
+export function codeGroup(blocks) {
+  const sorted = blocks
+    .map((block) => ({...block, variant: codeVariant(block.language)}))
+    .sort((a, b) => (a.variant === 'ts' ? -1 : 1) - (b.variant === 'ts' ? -1 : 1));
+  const titles = sorted.some((block) => block.title)
+    ? sorted.map((block) => `<span data-variant="${block.variant}">${escapeHtml(block.title || '')}</span>`).join('')
+    : '';
+  return `<div class="code-group"><div class="code-group-head"><span class="code-group-title">${titles}</span>${LANG_TABS}</div>${sorted.map((block) => codeBlock(block.code, block.language, {variant: block.variant})).join('')}</div>`;
+}
+
+
+function readFence(lines, start) {
+  const fence = start < lines.length && lines[start].match(/^```\s*([\w-]*)\s*(.*)$/);
+  if (!fence) {
+    return null;
+  }
+  const body = [];
+  let i = start + 1;
+  while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+    body.push(lines[i]);
+    i++;
+  }
+  return {code: body.join('\n'), language: fence[1], title: fence[2] || undefined, next: i + 1};
 }
 
 
@@ -76,16 +117,25 @@ export function markdown(source, options = {}) {
       continue;
     }
 
-    const fence = line.match(/^```\s*([\w-]*)\s*(.*)$/);
+    const fence = readFence(lines, i);
     if (fence) {
-      const body = [];
-      i++;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
-        body.push(lines[i]);
-        i++;
+      i = fence.next;
+      const variant = codeVariant(fence.language);
+      if (variant) {
+        // a fence in the other language right after this one is its translation
+        let j = i;
+        while (j < lines.length && !lines[j].trim()) {
+          j++;
+        }
+        const partner = readFence(lines, j);
+        const partnerVariant = partner && codeVariant(partner.language);
+        if (partnerVariant && partnerVariant !== variant) {
+          out.push(codeGroup([fence, partner]));
+          i = partner.next;
+          continue;
+        }
       }
-      i++;
-      out.push(codeBlock(body.join('\n'), fence[1], {title: fence[2] || undefined}));
+      out.push(codeBlock(fence.code, fence.language, {title: fence.title}));
       continue;
     }
 

@@ -41,6 +41,42 @@ Some features need optional packages. Install the ones you use:
 
 A `ShardClient` is one connection to the gateway. Create it with your token, listen for events, then call `run()`.
 
+```ts
+import { ShardClient } from 'detritus-client';
+
+const client = new ShardClient(process.env.TOKEN!, {
+  gateway: {
+    // fill the member cache for guilds bigger than the large threshold
+    loadAllMembers: true,
+  },
+});
+
+client.on('guildCreate', ({fromUnavailable, guild}) => {
+  if (fromUnavailable) {
+    console.log(`${guild.name} came back from an outage`);
+  } else {
+    console.log(`Joined ${guild.name}, now in ${client.guilds.length} guilds`);
+  }
+});
+
+client.on('messageCreate', async ({message}) => {
+  if (message.content === '!ping') {
+    const reply = await message.reply('pong!, deleting this in 5 seconds...');
+    setTimeout(() => reply.delete(), 5000);
+  }
+});
+
+(async () => {
+  await client.run();
+  console.log(`Connected with ${client.guilds.length} guilds cached`);
+
+  client.gateway.setPresence({
+    activity: {name: 'with Detritus', type: 0},
+    status: 'dnd',
+  });
+})();
+```
+
 ```js
 const { ShardClient } = require('detritus-client');
 
@@ -95,6 +131,18 @@ client.on('messageUpdate', ({differences, message}: GatewayClientEvents.MessageU
 });
 ```
 
+```js
+const { ShardClient } = require('detritus-client');
+
+const client = new ShardClient(process.env.TOKEN);
+
+client.on('messageUpdate', ({differences, message}) => {
+  if (message && differences && differences.content !== undefined) {
+    console.log(`${message.author} edited a message: ${differences.content} -> ${message.content}`);
+  }
+});
+```
+
 - The payload type for every event is in the `GatewayClientEvents` namespace, and the list of event names is the `Constants.ClientEvents` enum.
 - Update events include `differences`, an object holding the old values of whatever changed.
 - On a `ClusterClient`, every payload also has a `shard` property: the `ShardClient` the event came from.
@@ -114,6 +162,29 @@ const client = new ShardClient(process.env.TOKEN, {
 ## Sharding with ClusterClient
 
 Discord requires bots in 2,500+ guilds to shard. A `ClusterClient` runs a set of shards inside one process and forwards all of their events.
+
+```ts
+import { ClusterClient } from 'detritus-client';
+
+const cluster = new ClusterClient(process.env.TOKEN!, {
+  gateway: {
+    presence: {activity: {name: 'with Detritus', type: 0}, status: 'dnd'},
+  },
+  // shardCount: 4,     leave out to use Discord's recommended count
+  // shards: [0, 1],    which shard ids this process should run
+});
+
+cluster.on('messageCreate', async ({message, shard}) => {
+  if (message.content === '!ping') {
+    await message.reply(`pong from shard #${shard.shardId}!`);
+  }
+});
+
+(async () => {
+  await cluster.run();
+  console.log(`Launched shards ${cluster.shardStart} to ${cluster.shardEnd} of ${cluster.shardCount}`);
+})();
+```
 
 ```js
 const { ClusterClient } = require('detritus-client');
@@ -144,6 +215,20 @@ The shards live in `cluster.shards` once `run()` resolves. They're started one b
 
 When one process isn't enough, a `ClusterManager` forks child processes and gives each a range of shards. The child file creates its client **without a token**; it reads the token and shard range from the environment the manager sets up.
 
+```ts run.ts
+import { ClusterManager } from 'detritus-client';
+
+const manager = new ClusterManager('./child.js', process.env.TOKEN!, {
+  shardCount: 6,
+  shardsPerCluster: 2,
+});
+
+(async () => {
+  await manager.run();
+  console.log('Running 3 clusters with 2 shards each');
+})();
+```
+
 ```js run.js
 const { ClusterManager } = require('detritus-client');
 
@@ -155,6 +240,19 @@ const manager = new ClusterManager('./child.js', process.env.TOKEN, {
 (async () => {
   await manager.run();
   console.log('Running 3 clusters with 2 shards each');
+})();
+```
+
+```ts child.ts
+import { CommandClient } from 'detritus-client';
+
+// no token here, the manager passes it to the fork
+const commandClient = new CommandClient('', {prefix: '!!'});
+
+commandClient.add({name: 'ping', run: (context) => context.reply('pong')});
+
+(async () => {
+  await commandClient.run();
 })();
 ```
 
@@ -176,6 +274,50 @@ The child can be a `ClusterClient`, `CommandClient` or `InteractionCommandClient
 ## Prefix commands
 
 A `CommandClient` reads messages, matches a prefix and a command name, parses arguments and calls your `run` function with a `Command.Context`.
+
+```ts
+import { CommandClient } from 'detritus-client';
+
+interface EchoArgs {
+  reverse: boolean,
+  text: string,
+}
+
+const commandClient = new CommandClient(process.env.TOKEN!, {
+  prefix: '..',            // or prefixes: ['..', '!']
+  // mentionsEnabled: true, also lets "@bot ping" work
+});
+
+commandClient.add({
+  name: 'ping',
+  run: (context) => context.reply('pong!'),
+});
+
+commandClient.add({
+  name: 'echo',
+  label: 'text',  // the text after the command name ends up in args.text
+  args: [{name: 'reverse', type: 'bool', aliases: ['backwards']}],
+  onBeforeRun: (context, args: EchoArgs) => !!args.text,
+  onCancelRun: (context) => context.reply('Give me something to echo.'),
+  run: (context, args: EchoArgs) => {
+    const text = args.reverse ? args.text.split('').reverse().join('') : args.text;
+    return context.editOrReply(text);
+  },
+});
+
+commandClient.add({
+  name: 'owner',
+  // return false to stop the command, then onCancel is called
+  onBefore: (context) => context.client.isOwner(context.userId),
+  onCancel: (context) => context.reply('This command is only for the bot owner.'),
+  run: (context) => context.reply('Hello, owner.'),
+});
+
+(async () => {
+  const client = await commandClient.run();
+  console.log(`Loaded with ${client.shardCount} shards`);
+})();
+```
 
 ```js
 const { CommandClient } = require('detritus-client');
@@ -254,10 +396,48 @@ export default class RollCommand extends Command.Command {
 }
 ```
 
+```js commands/roll.js
+const { Command } = require('detritus-client');
+
+class RollCommand extends Command.Command {
+  constructor(client, options) {
+    super(client, {
+      ...options,
+      name: 'roll',
+      label: 'amount',
+      type: Number,
+      default: 1,
+      // only allow 1 to 20 rolls
+      choices: Array.from({length: 20}, (value, key) => key + 1),
+      help: 'Roll some dice, 1 to 20 at a time',
+    });
+  }
+
+  run(context, args) {
+    const rolls = Array.from({length: args.amount}, () => Math.ceil(Math.random() * 100));
+    return context.editOrReply(`Rolls: ${rolls.join(', ')}`);
+  }
+}
+
+module.exports = RollCommand;
+```
+
 ```ts run.ts
 import { CommandClient } from 'detritus-client';
 
 const commandClient = new CommandClient(process.env.TOKEN!, {prefix: '!!'});
+
+(async () => {
+  // paths are relative to the calling file
+  await commandClient.addMultipleIn('./commands');
+  await commandClient.run();
+})();
+```
+
+```js run.js
+const { CommandClient } = require('detritus-client');
+
+const commandClient = new CommandClient(process.env.TOKEN, {prefix: '!!'});
 
 (async () => {
   // paths are relative to the calling file
@@ -271,6 +451,49 @@ A shared base class is a good place for handlers every command needs, like forma
 ## Slash commands
 
 An `InteractionCommandClient` registers application commands with Discord and routes interactions to them. When it starts it compares your local commands with the ones Discord has and only uploads what changed.
+
+```ts
+import { Constants, Interaction, InteractionCommandClient } from 'detritus-client';
+const { ApplicationCommandOptionTypes, ApplicationCommandTypes, MessageFlags } = Constants;
+
+const interactionClient = new InteractionCommandClient(process.env.TOKEN!);
+
+interactionClient.add({
+  name: 'ping',
+  description: 'Ping!',
+  run: (context) => context.editOrRespond('pong!'),
+});
+
+interactionClient.add({
+  name: 'avatar',
+  description: 'Show someone\'s avatar',
+  options: [
+    {
+      name: 'user',
+      description: 'Whose avatar to show',
+      type: ApplicationCommandOptionTypes.USER,
+      // defaults can be functions of the context
+      default: (context: Interaction.InteractionContext) => context.member || context.user,
+    },
+  ],
+  run: (context, args) => context.editOrRespond(args.user.avatarUrl),
+});
+
+// right click a user > Apps > Poke
+interactionClient.add({
+  name: 'Poke',
+  type: ApplicationCommandTypes.USER,
+  run: (context, args) => context.editOrRespond({
+    content: `You poked ${args.member || args.user}`,
+    flags: MessageFlags.EPHEMERAL,
+  }),
+});
+
+(async () => {
+  const client = await interactionClient.run();
+  console.log(`Loaded with ${client.shardCount} shards`);
+})();
+```
 
 ```js
 const { Constants, InteractionCommandClient } = require('detritus-client');
@@ -326,6 +549,32 @@ The same hooks as prefix commands exist (`onBefore`, `onCancel`, `onRunError`, `
 
 Components can carry their own `run` callbacks. Detritus keeps a listener for the message, so you don't need to match `custom_id`s by hand. `Utils.Components` holds the rows, and `Utils.ComponentActionRow` builds a single row.
 
+```ts
+import { Utils } from 'detritus-client';
+const { Components } = Utils;
+
+interactionClient.add({
+  name: 'click-test',
+  description: 'Click a button',
+  run: (context) => {
+    const components = new Components({
+      timeout: 5 * 60 * 1000,
+      onTimeout: () => context.editOrRespond({content: 'Nobody clicked in time.', components: []}),
+    });
+
+    components.createButton({
+      label: 'Click me',
+      run: (componentContext) => componentContext.editOrRespond({
+        content: `Clicked by ${componentContext.user}`,
+        components: [],
+      }),
+    });
+
+    return context.editOrRespond({content: 'Click the button', components});
+  },
+});
+```
+
 ```js
 const { Utils } = require('detritus-client');
 const { Components } = Utils;
@@ -370,9 +619,44 @@ modal.createInputText({customId: 'cats', label: 'Do you like cats?', required: t
 return context.respond(modal);
 ```
 
+```js
+const { Utils } = require('detritus-client');
+
+const modal = new Utils.InteractionModal({
+  title: 'Quick survey',
+  timeout: 5 * 60 * 1000,
+  run: (modalContext, args) => modalContext.createMessage(`Birds: ${args.birds}, cats: ${args.cats}`),
+});
+modal.createInputText({customId: 'birds', label: 'Do you like birds?', required: true});
+modal.createInputText({customId: 'cats', label: 'Do you like cats?', required: true});
+
+return context.respond(modal);
+```
+
 ## Embeds and markup
 
 `Utils.Embed` builds embeds with chainable setters, and `Utils.Markup` formats and escapes text.
+
+```ts
+import { Utils } from 'detritus-client';
+const { Embed, Markup } = Utils;
+
+const embed = new Embed();
+embed.setTitle('Server info');
+embed.setColor(0x5865f2);
+embed.setDescription(Markup.bold(guild.name));
+embed.addField('Members', String(guild.memberCount), true);
+if (guild.iconUrl) {
+  embed.setThumbnail(guild.iconUrl);
+}
+embed.setTimestamp();
+
+await message.reply({embed});
+
+// escaping user input before putting it in a message
+await message.reply(`You said: ${Markup.escape.all(message.content)}`);
+await message.reply(Markup.codeblock(JSON.stringify(data, null, 2), {language: 'json'}));
+```
 
 ```js
 const { Utils } = require('detritus-client');
@@ -383,7 +667,9 @@ embed.setTitle('Server info');
 embed.setColor(0x5865f2);
 embed.setDescription(Markup.bold(guild.name));
 embed.addField('Members', String(guild.memberCount), true);
-embed.setThumbnail(guild.iconUrl);
+if (guild.iconUrl) {
+  embed.setThumbnail(guild.iconUrl);
+}
 embed.setTimestamp();
 
 await message.reply({embed});
