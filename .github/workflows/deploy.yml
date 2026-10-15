@@ -1,0 +1,106 @@
+# Builds the docs from the five package repos and deploys them to GitHub Pages.
+# The package repos are cloned next to this one, the same layout as a local checkout:
+#   client/  client-rest/  client-socket/  rest/  utils/  docs/
+name: Deploy docs
+
+on:
+  push:
+    branches: [master]
+  # a package repo can trigger a rebuild after it pushes or publishes, see the README
+  repository_dispatch:
+    types: [package-updated]
+  # catch anything that was pushed without a trigger
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  # which branch of each package to document, keep these on the branches you publish from
+  CLIENT_REF: '0.16.4'
+  CLIENT_REST_REF: '0.10.6'
+  CLIENT_SOCKET_REF: '0.8.4'
+  REST_REF: undici-rewrite
+  UTILS_REF: '0.5.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: docs
+
+      - uses: actions/checkout@v4
+        with:
+          repository: detritusjs/client
+          ref: ${{ env.CLIENT_REF }}
+          path: client
+      - uses: actions/checkout@v4
+        with:
+          repository: detritusjs/client-rest
+          ref: ${{ env.CLIENT_REST_REF }}
+          path: client-rest
+      - uses: actions/checkout@v4
+        with:
+          repository: detritusjs/client-socket
+          ref: ${{ env.CLIENT_SOCKET_REF }}
+          path: client-socket
+      - uses: actions/checkout@v4
+        with:
+          repository: detritusjs/rest
+          ref: ${{ env.REST_REF }}
+          path: rest
+      - uses: actions/checkout@v4
+        with:
+          repository: detritusjs/utils
+          ref: ${{ env.UTILS_REF }}
+          path: utils
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # TypeDoc needs each package's dependencies to resolve its types; skip install scripts (no build needed)
+      - name: Install package dependencies
+        run: |
+          for pkg in client client-rest client-socket rest utils; do
+            (cd "$pkg" && npm ci --ignore-scripts --no-audit --no-fund)
+          done
+
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm ci --no-audit --no-fund
+
+      # project pages live under /<repo>/, set the DOCS_BASE repository variable to `/` when using a custom domain
+      - name: Build
+        working-directory: docs
+        env:
+          DOCS_BASE: ${{ vars.DOCS_BASE }}
+        run: |
+          export DOCS_BASE="${DOCS_BASE:-/${GITHUB_REPOSITORY#*/}/}"
+          echo "Building with base $DOCS_BASE"
+          npm run docs
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
