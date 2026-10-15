@@ -70,10 +70,11 @@ jobs:
           node-version: 24
 
       # TypeDoc needs each package's dependencies to resolve its types; skip install scripts (no build needed)
+      # `npm install` rather than `npm ci`, so a package whose lockfile lags its package.json still builds
       - name: Install package dependencies
         run: |
           for pkg in client client-rest client-socket rest utils; do
-            (cd "$pkg" && npm ci --ignore-scripts --no-audit --no-fund)
+            (cd "$pkg" && npm install --ignore-scripts --no-audit --no-fund)
           done
 
       - name: Install docs dependencies
