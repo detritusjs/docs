@@ -24,7 +24,7 @@ Optional packages add features:
 
 | Package | What it enables |
 | --- | --- |
-| `@snazzah/davey` | **Required for voice.** Discord has required end-to-end encryption (DAVE) since March 1st, 2026. |
+| `@snazzah/davey` (`^0.2.0`) | **Required for voice.** Discord has required end-to-end encryption (DAVE) since March 1st, 2026. Versions before 0.2.0 won't work. |
 | `sodium-native` or `libsodium-wrappers` | The `aead_xchacha20_poly1305_rtpsize` voice encryption fallback. The default `aead_aes256_gcm_rtpsize` is built into Node. |
 | `erlpack` | The `etf` encoding, which is smaller and faster to decode than JSON. |
 | `bufferutil` | Faster masking of the frames `ws` sends, `ws` picks it up automatically. |
@@ -81,6 +81,14 @@ socket.connect('wss://gateway.discord.gg/');
 
 The socket reconnects and resumes on its own (`autoReconnect`, on by default). Call `socket.kill()` to close it for good.
 
+The close code decides whether the next connection resumes or identifies. `socket.disconnect()` closes with `1000` by default, which drops the session (session id, sequence and resume url) and doesn't reconnect on its own. Calling `socket.connect()` after it identifies from scratch, and Discord sends a new `READY` followed by a `GUILD_CREATE` for every guild. Any other code keeps the session, so the next connection resumes and only replays the events that were missed.
+
+```js
+// restart the shard with a new session
+socket.disconnect(1000, 'restarting');
+socket.connect();
+```
+
 ## Socket options
 
 | Option | What it does |
@@ -112,9 +120,19 @@ socket.voiceStateUpdate(guildId, channelId, {selfDeaf: true});
 
 Anything else can be sent raw with `socket.send(op, data)`, using `Constants.GatewayOpCodes`.
 
+`send()` takes a callback as its third argument, and the callback always runs exactly once. It gets no error once the packet was written. If the packet was dropped, because the socket wasn't connected, was killed, or reset before the packet's turn came, it gets an error saying why. A dropped packet isn't sent again after a reconnect.
+
+```js
+socket.send(Constants.GatewayOpCodes.PRESENCE_UPDATE, presence, (error) => {
+  if (error) {
+    console.warn('Presence not sent:', error.message);
+  }
+});
+```
+
 ## Voice
 
-`voiceConnect()` sends the voice state update, waits for the voice server, and resolves with a `Media.Socket`. Its `transportReady` event fires with the `MediaUdp.Socket` once audio can flow.
+`voiceConnect()` sends the voice state update, waits for the voice server, and resolves with a `Media.Socket`. Its `transportReady` event fires with the `MediaUdp.Socket` once audio can flow, and the `media.transportReady` getter says whether it still can (it goes `false` while reconnecting). In an end-to-end encrypted call, frames are dropped until `media.dave.canEncrypt`, when the call's sending key arrives.
 
 ```ts
 import { Constants, Gateway } from 'detritus-client-socket';

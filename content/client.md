@@ -30,7 +30,7 @@ Some features need optional packages. Install the ones you use:
 
 | Package | What it enables |
 | --- | --- |
-| `@snazzah/davey` | Joining voice channels. Discord has required end-to-end encrypted voice (DAVE) since March 1st, 2026. |
+| `@snazzah/davey` (`^0.2.0`) | Joining voice channels. Discord has required end-to-end encrypted voice (DAVE) since March 1st, 2026. |
 | `@discordjs/opus` or `opusscript` | Encoding and decoding Opus audio for voice. |
 | `sodium-native` or `libsodium-wrappers` | The `aead_xchacha20_poly1305_rtpsize` voice encryption fallback. |
 | `erlpack` | The faster `etf` gateway encoding instead of JSON. |
@@ -270,6 +270,8 @@ commandClient.add({name: 'ping', run: (context) => context.reply('pong')});
 ```
 
 The child can be a `ClusterClient`, `CommandClient` or `InteractionCommandClient`. Point the manager at the **compiled** file if you write the child in TypeScript.
+
+`manager.run()` gives each cluster 30 seconds per shard to become ready. A cluster that takes longer is killed and started again while the other clusters keep launching, and its `ClusterProcess` emits `warn` (the manager's `clusterProcess` event hands you each one as it's created). Killing a cluster sends `SIGTERM`, then `SIGKILL` if the child hasn't exited 10 seconds later. A child whose manager goes away kills its own client.
 
 ## Prefix commands
 
@@ -541,9 +543,37 @@ interactionClient.add({
 - Pass `guildIds: ['...']` to register a command in specific guilds instead of globally. Guild commands update instantly, which is handy while developing.
 - Sub-commands and groups are options whose `type` is `SUB_COMMAND` or `SUB_COMMAND_GROUP`, or instances of `Interaction.InteractionCommandOption` with their own `run`.
 - `context.editOrRespond()` responds the first time and edits the response after that. For slow work, call `context.respond(InteractionCallbackTypes.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE)` first.
+- An interaction gets one initial response. A second `respond()` rejects right away instead of reaching Discord, and `context.responseType` says which response was sent. After a modal or autocomplete response there's no message to edit, so `editOrRespond()` throws.
+- Followups (`context.createMessage()`) and edits wait for the initial response to finish, so a followup right after a deferral fills the loading message.
 - `addMultipleIn('./commands')` works here too, with classes extending `Interaction.InteractionCommand`.
 
 The same hooks as prefix commands exist (`onBefore`, `onCancel`, `onRunError`, `onValueError`, ...), plus `permissions` / `permissionsClient` checks and `onDmBlocked` for `disableDm` commands.
+
+### Command permissions
+
+Servers can limit who uses your commands, and where, in Server Settings > Integrations: per command, or for the whole app. Discord enforces this itself only for slash commands used through the server install. A prefix command, or a user install command used in a server, reaches you no matter what the server set, so check those yourself:
+
+```js
+// in a prefix command's onBefore, or a user install command's onBefore
+async onBefore(context) {
+  const { channel, guildId, member } = context;
+  if (!guildId || !channel || !member) {
+    return true;
+  }
+  try {
+    await context.client.applicationCommandPermissions.fill(guildId);
+  } catch(error) {
+    // no `applications.commands` scope in this server, nothing to check
+  }
+  // the matching slash command's ids (global and guild), or [] to only use the app-wide settings
+  const commandIds = [slashCommandId];
+  return context.client.applicationCommandPermissions.isAllowed(guildId, commandIds, channel, member);
+}
+```
+
+- The cache (`cache: {applicationCommandPermissions: true}`) starts empty. `fill(guildId)` fetches a server once, callers asking at the same time share the request, and gateway updates keep it current after that. A new session clears it.
+- A command with its own settings ignores the app-wide ones, like Discord does. Administrators are always allowed, and a server with nothing cached allows everything.
+- A server that installed the bot without the `applications.commands` scope fails `fill()` every time until it reinstalls the bot. Remember those failures for a while instead of fetching again on every command.
 
 ## Buttons, menus and modals
 
@@ -721,13 +751,15 @@ if (isNew) {
 }
 ```
 
+`connection.ready` says whether audio can be sent right now. It goes `false` while the connection reconnects. Calls like `setSpeaking()` that are made during a reconnect resolve without being sent, so set them again on the connection's `ready` event.
+
 Voice needs `@snazzah/davey` for DAVE end-to-end encryption, and an Opus package to encode or decode audio. `AudioMixer` can mix decoded audio from several users into one PCM stream. Call `connection.kill()` to leave.
 
 ## Going lower level
 
 Everything the high-level client does is available underneath it:
 
-- `client.rest` is a REST client with the same methods as `detritus-client-rest`'s `Client` (like `createMessage` or `fetchGuild`), but it returns structures instead of raw objects. The raw client is at `client.rest.raw`.
+- `client.rest` is a REST client with the same methods as `detritus-client-rest`'s `Client` (like `createMessage` or `fetchGuild`), but it returns structures instead of raw objects. The raw client is at `client.rest.raw`. Its events come through the client as `restRequest`, `restResponse` and `restTokenUnauthorized` (once per shard when the token gets a `401` with `haltOnUnauthorized` on).
 - `client.gateway` is the `detritus-client-socket` gateway connection, for things like `setPresence()` or `requestGuildMembers()`.
 - `GatewayRawEvents` describes the raw payloads, before they're turned into structures.
 

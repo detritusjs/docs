@@ -172,6 +172,8 @@ interval.unref(); // don't keep the process alive just for this
 await Timers.sleep(250);
 ```
 
+`stop()` returns whether the timer was running. `timeout.start(ms, handler, false)` leaves a running timeout alone and returns `false`, so you can tell it didn't restart. A timeout isn't running anymore by the time its handler runs, so the handler can start it again.
+
 ## Tools
 
 ```ts

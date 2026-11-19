@@ -66,7 +66,7 @@ await client.editGuildMember(guildId, userId, {
 });
 ```
 
-> **Note**: Tokens are sent as `Bot <token>` by default. Pass `authType: 'BEARER'` for OAuth2 access tokens, or `authType: 'USER'` to send the token as-is.
+> **Note**: Tokens are sent as `Bot <token>` by default. Pass `authType: 'BEARER'` for OAuth2 access tokens, or `authType: 'USER'` to send the token as-is. Any other value throws. `client.setToken(token)` swaps the token later.
 
 ## Files and attachments
 
@@ -124,7 +124,7 @@ The client tracks ratelimit buckets from Discord's headers and waits automatical
 | --- | --- | --- |
 | `errorOnRatelimit` | `false` | Throw on a `429` instead of waiting and retrying. |
 | `errorOnRatelimitIfMoreThan` | `0` | Only throw if the wait would be longer than this many milliseconds. |
-| `haltOnUnauthorized` | `false` | Stop sending requests after a `401`, so a revoked token doesn't get your IP banned. |
+| `haltOnUnauthorized` | `false` | Stop sending requests with your token after a `401`, so a revoked token doesn't get your IP banned. Requests already queued are refused at once, `tokenUnauthorized` fires once, and `client.setToken()` starts sending again. |
 | `bucketsExpireIn` | 1 hour | How long to remember a route's bucket. |
 | `clientsideChecks` | `true` | Validate arguments before sending. |
 
@@ -154,7 +154,38 @@ try {
 }
 ```
 
-Discord bans IPs that send too many invalid requests (`401`, `403` and `429`) in 10 minutes. The client counts them and emits `invalidRequestWarning` as you get close to the limit.
+A request the client refuses to send, without asking Discord, rejects with an error whose `reason` says why, and `retryAfter` in milliseconds when it's waiting on a ratelimit. The reasons are in `Constants.RefusalReasons`:
+
+| `reason` | When |
+| --- | --- |
+| `ratelimited` | The route or global limit is locked and `errorOnRatelimit` is on. |
+| `ratelimitedTooLong` | The wait is longer than `errorOnRatelimitIfMoreThan`. |
+| `edgeRatelimited` | Cloudflare ratelimited your IP. |
+| `tokenUnauthorized` | The token got a `401` earlier and `haltOnUnauthorized` is on. |
+
+```js
+try {
+  await client.createMessage(channelId, 'hi');
+} catch (error) {
+  if (error.reason === 'ratelimitedTooLong') {
+    console.log(`Try again in ${error.retryAfter}ms`);
+  }
+}
+```
+
+After a global `429`, the queued requests are sent at most 50 per second until the queue is empty, and new requests wait in that queue too. If your bot has a raised global limit, give the client a global bucket with your limit. Otherwise new traffic above 50 per second keeps the queue from ever emptying:
+
+```js
+const { Bucket } = require('detritus-client-rest/lib/bucket');
+
+const client = new Client(process.env.TOKEN, {
+  globalBucket: new Bucket('global', {maxPerWindow: 500}),
+});
+```
+
+Each bucket's `state` (`Constants.BucketStates`: `unknown`, `probing`, `open`, `exhausted`, `locked` or `unlimited`) says what it's waiting on, which helps when a request seems stuck. Route buckets are in `client.buckets`, and the global one is `client.globalBucket`.
+
+Discord bans IPs that send too many invalid requests (`401`, `403` and `429`) in 10 minutes. The client counts them and emits `invalidRequestWarning` at 9,000. It warns again only after the count has dropped below 8,000.
 
 ## Events
 
@@ -172,6 +203,11 @@ client.on('response', ({response, restRequest}) => {
 
 client.on('ratelimited', ({global, retryAfter, scope}) => {
   console.warn(`Ratelimited for ${retryAfter}ms (global: ${global}, scope: ${scope})`);
+});
+
+// only with `haltOnUnauthorized`, once per rejected token
+client.on('tokenUnauthorized', ({response, restRequest}) => {
+  console.error('The token was rejected, requests are refused until client.setToken()');
 });
 ```
 
