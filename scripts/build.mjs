@@ -964,9 +964,9 @@ function renderLanding() {
   };
 
   const installs = [
-    ['npm', 'npm install detritus-client'],
-    ['yarn', 'yarn add detritus-client'],
-    ['pnpm', 'pnpm add detritus-client'],
+    ['npm', 'npm install detritus-client@beta'],
+    ['yarn', 'yarn add detritus-client@beta'],
+    ['pnpm', 'pnpm add detritus-client@beta'],
   ];
   const installer = `<div class="installer" data-tabs>
   <div class="installer-tabs" role="tablist" aria-label="Package manager">${installs.map(([name], index) => `<button type="button" class="installer-tab" role="tab" aria-selected="${index === 0}" data-tab="${index}">${name}</button>`).join('')}</div>

@@ -38,7 +38,7 @@ export const LINKS = {
   github: 'https://github.com/detritusjs',
   discord: 'https://discord.gg/NEq6wws',
   npm: 'https://www.npmjs.com/package/detritus-client',
-  examples: 'https://github.com/detritusjs/client/tree/master/examples',
+  examples: 'https://github.com/detritusjs/client/tree/0.16.4/examples',
 };
 
 

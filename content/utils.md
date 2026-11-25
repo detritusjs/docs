@@ -4,11 +4,11 @@ The small building blocks shared by every Detritus package: collections, event e
 
 ## Overview
 
-`detritus-utils` has no Discord-specific behavior and very few dependencies, so it's useful on its own too.
+`detritus-utils` has no dependencies and only a few Discord-specific pieces (`Tools.guildIdToShardId()` and the Discord epoch constants), so it's useful on its own too.
 
 | Export | What it is |
 | --- | --- |
-| `BaseCollection` | A `Map` with array-style helpers, an optional size limit (LRU) and optional expiry. |
+| `BaseCollection` | A `Map`-like collection with array-style helpers, an optional size limit (LRU) and optional expiry. |
 | `BaseSet` | A `Set` with the same array-style helpers. |
 | `EventSpewer` | Node's `EventEmitter` with removable subscriptions. |
 | `Snowflake` | Generate and take apart Discord-style snowflake ids. |
@@ -18,12 +18,14 @@ The small building blocks shared by every Detritus package: collections, event e
 ## Installation
 
 ```bash
-npm install detritus-utils
+npm install detritus-utils@beta
 ```
+
+The version this guide covers is published under npm's `beta` tag. `latest` is still the old 0.4.0.
 
 ## Collections
 
-`BaseCollection` is a `Map` plus the array methods you keep reaching for: `filter`, `find`, `map`, `some`, `every`, `reduce`, `sort`, `first`, `toArray`, and a `length` property.
+`BaseCollection` works like a `Map` plus the array methods you keep reaching for: `filter`, `find`, `map`, `some`, `every`, `reduce`, `sort`, `first`, `toArray`, and a `length` property. It wraps a `Map` instead of extending one, so it is not `instanceof Map`, and the constructor takes options, not entries.
 
 ```ts
 import { BaseCollection } from 'detritus-utils';
@@ -60,7 +62,7 @@ Give it a `limit` to cap its size. Setting a new key past the limit evicts the l
 const recent = new BaseCollection({limit: 1000});
 ```
 
-Give it an `expire` time (in milliseconds) and entries that haven't been used in that long are removed by a background interval. The interval starts when items are added and stops when the collection is cleared.
+Give it an `expire` time (in milliseconds) and entries that haven't been used in that long are removed by a background interval. The interval starts when items are added and stops whenever the collection becomes empty.
 
 ```js
 const sessions = new BaseCollection({expire: 5 * 60 * 1000});
@@ -68,7 +70,7 @@ sessions.set(token, session);
 sessions.get(token); // reading an entry counts as using it
 ```
 
-`getOrInsert(key, value)` and `getOrInsertComputed(key, () => value)` return the existing value or store a new one. `BaseSet` has the same helpers for sets.
+`getOrInsert(key, value)` and `getOrInsertComputed(key, () => value)` return the existing value or store a new one. `BaseSet` doesn't have these two, it shares the array-style helpers (`filter`, `find`, `map` and the rest).
 
 ## Event emitters
 
@@ -120,7 +122,7 @@ Snowflake.deconstruct('175928847299117063');
 // {id, timestamp, workerId, processId, sequence}
 
 // make an id for a point in time, handy for `before`/`after` paging
-Snowflake.generate({timestamp: Date.now() - 24 * 60 * 60 * 1000}).id;
+Snowflake.generate({timestamp: Date.now() - 24 * 60 * 60 * 1000, sequence: 0}).id;
 ```
 
 ```js
@@ -133,7 +135,7 @@ Snowflake.deconstruct('175928847299117063');
 // {id, timestamp, workerId, processId, sequence}
 
 // make an id for a point in time, handy for `before`/`after` paging
-Snowflake.generate({timestamp: Date.now() - 24 * 60 * 60 * 1000}).id;
+Snowflake.generate({timestamp: Date.now() - 24 * 60 * 60 * 1000, sequence: 0}).id;
 ```
 
 Every function takes an `epoch` option for snowflakes that aren't Discord's. The default is `Constants.DISCORD_SNOWFLAKE_EPOCH` (2015-01-01).
@@ -154,7 +156,7 @@ const interval = new Timers.Interval();
 interval.start(1000, () => console.log('tick'));
 interval.unref(); // don't keep the process alive just for this
 
-await Timers.sleep(250);
+Timers.sleep(250).then(() => console.log('250ms passed'));
 ```
 
 ```js
@@ -169,7 +171,7 @@ const interval = new Timers.Interval();
 interval.start(1000, () => console.log('tick'));
 interval.unref(); // don't keep the process alive just for this
 
-await Timers.sleep(250);
+Timers.sleep(250).then(() => console.log('250ms passed'));
 ```
 
 `stop()` returns whether the timer was running. `timeout.start(ms, handler, false)` leaves a running timeout alone and returns `false`, so you can tell it didn't restart. A timeout isn't running anymore by the time its handler runs, so the handler can start it again.

@@ -10,13 +10,15 @@ A small HTTP client built on undici's `fetch`, with route templates, base URLs, 
 - **Routes** like `/users/:userId`, filled in from `params` and URI-encoded for you.
 - **Bodies** are JSON-encoded automatically. Add `files` (or `multipart: true`) and the request becomes `multipart/form-data`.
 - **Timeouts** that cover the whole request, including reading the body.
-- **Reusable requests**: build a `Request` once and `send()` it again, the encoded body is cached.
+- **Reusable requests**: build a `Request` once and `send()` it again. Only a request with a stream `body` can't be sent twice.
 
 ## Installation
 
 ```bash
-npm install detritus-rest
+npm install detritus-rest@beta
 ```
+
+The version this guide covers is published under npm's `beta` tag. `latest` is still the old 0.8.0.
 
 It requires **Node 22.19 or newer**, and throws on import on anything older.
 
@@ -48,7 +50,7 @@ const client = new Client();
 })();
 ```
 
-> **Note**: Like `fetch`, a request only rejects on network errors and timeouts. A `404` or `500` still resolves, so check `response.ok` or `response.statusCode`.
+> **Note**: Like `fetch`, a request doesn't reject on an error status. A `404` or `500` still resolves, so check `response.ok` or `response.statusCode`. It rejects when there is no response to give, like on invalid options, a network error, a failed redirect, a timeout or an aborted `signal`.
 
 The method helpers set the method for you:
 
@@ -84,7 +86,7 @@ The `Route` is kept on the request as `request.route`, which is how `detritus-cl
 
 ## Request bodies
 
-A plain object or array `body` is sent as JSON. Strings, `Buffer`s, `Blob`s, `URLSearchParams` and streams are sent as-is.
+A plain object or array `body` is sent as JSON. `Buffer`s, `Blob`s, `URLSearchParams` and streams are sent as-is. A string is JSON-encoded too, so `'hello'` is sent as `"hello"` with the quotes. Pass `jsonify: false` to send a raw string.
 
 ```js
 // application/json
@@ -114,7 +116,7 @@ A file's `value` can be a string, `Buffer`, `Blob` or a readable stream; streams
 
 ## Timeouts and aborting
 
-`timeout` (in milliseconds) aborts the request if it, or reading its body, takes too long. It rejects with a `TimeoutError`. You can also pass your own `signal`:
+`timeout` (in milliseconds) aborts the request if it, or reading its body, takes too long. It rejects with a `DOMException` whose `name` is `'TimeoutError'`. You can also pass your own `signal`:
 
 ```ts
 try {

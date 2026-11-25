@@ -21,8 +21,10 @@ The two command clients can share one underlying client, so a bot can have prefi
 ## Installation
 
 ```bash
-npm install detritus-client
+npm install detritus-client@beta
 ```
+
+This guide covers the 0.17 line, which is published under the `beta` tag.
 
 The client needs **Node 22.19 or newer**. Its HTTP layer, `detritus-rest`, is built on undici and refuses to load on older versions.
 
@@ -32,7 +34,7 @@ Some features need optional packages. Install the ones you use:
 | --- | --- |
 | `@snazzah/davey` (`^0.2.0`) | Joining voice channels. Discord has required end-to-end encrypted voice (DAVE) since March 1st, 2026. |
 | `@discordjs/opus` or `opusscript` | Encoding and decoding Opus audio for voice. |
-| `sodium-native` or `libsodium-wrappers` | The `aead_xchacha20_poly1305_rtpsize` voice encryption fallback. |
+| `sodium-native` or `libsodium-wrappers` | Optional. A faster implementation of the `aead_xchacha20_poly1305_rtpsize` voice encryption mode. Node's own crypto already covers both voice encryption modes. |
 | `erlpack` | The faster `etf` gateway encoding instead of JSON. |
 
 > **Note**: Keep your bot token out of your source code. The examples here read it from `process.env.TOKEN`.
@@ -46,8 +48,8 @@ import { ShardClient } from 'detritus-client';
 
 const client = new ShardClient(process.env.TOKEN!, {
   gateway: {
-    // fill the member cache for guilds bigger than the large threshold
-    loadAllMembers: true,
+    // message content is a privileged intent, switch it on in the developer portal too
+    intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT'],
   },
 });
 
@@ -82,8 +84,8 @@ const { ShardClient } = require('detritus-client');
 
 const client = new ShardClient(process.env.TOKEN, {
   gateway: {
-    // fill the member cache for guilds bigger than the large threshold
-    loadAllMembers: true,
+    // message content is a privileged intent, switch it on in the developer portal too
+    intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT'],
   },
 });
 
@@ -113,16 +115,20 @@ client.on('messageCreate', async ({message}) => {
 })();
 ```
 
-`run()` fetches the gateway URL, connects, waits for the `READY` payload and resolves with the client. Structures like `Structures.Message` come with helpers for the endpoints that act on them, so `message.reply()`, `reply.delete()`, `guild.fetchMembers()` and so on map straight to REST calls.
+The example asks for the `MESSAGE_CONTENT` intent on top of the default ones. Without it `message.content` is empty in servers, so the `!ping` check would never match.
+
+`run()` fetches the gateway URL, connects, waits for the `READY` payload and resolves with the client. Structures like `Structures.Message` come with helpers for the endpoints that act on them, so `message.reply()`, `reply.delete()`, `guild.fetchMembers({limit: 100})` and so on map straight to REST calls.
 
 ## Events
 
-Every client is an event emitter. Events are named in camelCase, like `messageCreate` or `guildMemberAdd`, and the listener always gets **one object** as its payload.
+Every client is an event emitter. Events are named in camelCase, like `messageCreate` or `guildMemberAdd`, and the listener gets **one object** as its payload. A few lifecycle events have no payload, like a `ClusterClient`'s `ready`.
 
 ```ts
 import { GatewayClientEvents, ShardClient } from 'detritus-client';
 
-const client = new ShardClient(process.env.TOKEN!);
+const client = new ShardClient(process.env.TOKEN!, {
+  gateway: {intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT']},
+});
 
 client.on('messageUpdate', ({differences, message}: GatewayClientEvents.MessageUpdate) => {
   if (message && differences && differences.content !== undefined) {
@@ -134,7 +140,9 @@ client.on('messageUpdate', ({differences, message}: GatewayClientEvents.MessageU
 ```js
 const { ShardClient } = require('detritus-client');
 
-const client = new ShardClient(process.env.TOKEN);
+const client = new ShardClient(process.env.TOKEN, {
+  gateway: {intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT']},
+});
 
 client.on('messageUpdate', ({differences, message}) => {
   if (message && differences && differences.content !== undefined) {
@@ -148,13 +156,13 @@ client.on('messageUpdate', ({differences, message}) => {
 - On a `ClusterClient`, every payload also has a `shard` property: the `ShardClient` the event came from.
 - `client.subscribe(name, listener)` works like `on()` but returns an `EventSubscription` you can `.remove()` later.
 
-The gateway sends only what your **intents** allow. By default the client asks for every unprivileged intent. To add privileged ones like message content or members, turn them on in the developer portal, then pass them in:
+The gateway sends only what your **intents** allow. By default the client asks for every unprivileged intent. To add privileged ones like message content or members, turn them on in the developer portal, then pass them in. The `intents` option replaces the default set, so keep `'ALL_UNPRIVILEGED'` in the list:
 
 ```js
 const client = new ShardClient(process.env.TOKEN, {
   gateway: {
     // 'ALL', 'ALL_UNPRIVILEGED', a bitfield, or a list of names/numbers
-    intents: ['GUILDS', 'GUILD_MESSAGES', 'MESSAGE_CONTENT', 'GUILD_MEMBERS'],
+    intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT', 'GUILD_MEMBERS'],
   },
 });
 ```
@@ -168,10 +176,11 @@ import { ClusterClient } from 'detritus-client';
 
 const cluster = new ClusterClient(process.env.TOKEN!, {
   gateway: {
+    intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT'],
     presence: {activity: {name: 'with Detritus', type: 0}, status: 'dnd'},
   },
   // shardCount: 4,     leave out to use Discord's recommended count
-  // shards: [0, 1],    which shard ids this process should run
+  // shards: [0, 1],    inclusive [first, last] range of shard ids this process should run
 });
 
 cluster.on('messageCreate', async ({message, shard}) => {
@@ -191,10 +200,11 @@ const { ClusterClient } = require('detritus-client');
 
 const cluster = new ClusterClient(process.env.TOKEN, {
   gateway: {
+    intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT'],
     presence: {activity: {name: 'with Detritus', type: 0}, status: 'dnd'},
   },
   // shardCount: 4,     leave out to use Discord's recommended count
-  // shards: [0, 1],    which shard ids this process should run
+  // shards: [0, 1],    inclusive [first, last] range of shard ids this process should run
 });
 
 cluster.on('messageCreate', async ({message, shard}) => {
@@ -209,7 +219,7 @@ cluster.on('messageCreate', async ({message, shard}) => {
 })();
 ```
 
-The shards live in `cluster.shards` once `run()` resolves. They're started one bucket at a time, following the session's `max_concurrency`.
+The shards live in `cluster.shards` once `run()` resolves. `cluster.run()` resolves once every shard has started connecting, before they are all ready. They're started one bucket at a time, following the session's `max_concurrency`.
 
 ## Multiple processes with ClusterManager
 
@@ -247,7 +257,10 @@ const manager = new ClusterManager('./child.js', process.env.TOKEN, {
 import { CommandClient } from 'detritus-client';
 
 // no token here, the manager passes it to the fork
-const commandClient = new CommandClient('', {prefix: '!!'});
+const commandClient = new CommandClient('', {
+  prefix: '!!',
+  gateway: {intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT']},
+});
 
 commandClient.add({name: 'ping', run: (context) => context.reply('pong')});
 
@@ -260,7 +273,10 @@ commandClient.add({name: 'ping', run: (context) => context.reply('pong')});
 const { CommandClient } = require('detritus-client');
 
 // no token here, the manager passes it to the fork
-const commandClient = new CommandClient('', {prefix: '!!'});
+const commandClient = new CommandClient('', {
+  prefix: '!!',
+  gateway: {intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT']},
+});
 
 commandClient.add({name: 'ping', run: (context) => context.reply('pong')});
 
@@ -287,7 +303,11 @@ interface EchoArgs {
 
 const commandClient = new CommandClient(process.env.TOKEN!, {
   prefix: '..',            // or prefixes: ['..', '!']
-  // mentionsEnabled: true, also lets "@bot ping" work
+  // "@bot ping" works too, mentionsEnabled: false turns that off
+  gateway: {
+    // message content is a privileged intent, the prefix can't match in servers without it
+    intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT'],
+  },
 });
 
 commandClient.add({
@@ -326,7 +346,11 @@ const { CommandClient } = require('detritus-client');
 
 const commandClient = new CommandClient(process.env.TOKEN, {
   prefix: '..',            // or prefixes: ['..', '!']
-  // mentionsEnabled: true, also lets "@bot ping" work
+  // "@bot ping" works too, mentionsEnabled: false turns that off
+  gateway: {
+    // message content is a privileged intent, the prefix can't match in servers without it
+    intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT'],
+  },
 });
 
 commandClient.add({
@@ -362,9 +386,9 @@ commandClient.add({
 
 Arguments are flags written as `-name value`. Each has a `type` (`'string'`, `'number'`, `'bool'`, or your own converter function), optional `default`, `choices` and `aliases`. When a conversion throws, `onTypeError` gets an object of errors keyed by argument name.
 
-A command runs in this order: ratelimit check → DM and permission checks → `onBefore` → argument parsing → `onBeforeRun` → `run` → `onSuccess` (or `onRunError`). The paths that stop early call `onRatelimit`, `onPermissionsFail`, `onCancel`, `onTypeError` or `onCancelRun`, and `onError` catches anything else.
+A command runs in this order: DM check → the bot's permissions (`permissionsClient`) → the user's permissions (`permissions`) → ratelimit check → `onBefore` → argument parsing → `onBeforeRun` → `run` → `onSuccess`. The paths that stop early call `onDmBlocked`, `onPermissionsFailClient`, `onPermissionsFail`, `onRatelimit`, `onCancel`, `onTypeError` or `onCancelRun`. An error thrown by `run` goes to `onRunError(context, args, error)`. `onError(context, args, error)` gets what `onBeforeRun`, `onCancelRun` or `onSuccess` throw. An error thrown by `onBefore` or `onCancel` only emits the `commandError` event.
 
-> **Tip**: Use `context.editOrReply()` instead of `context.reply()`. If the user edits their message, the command runs again and edits its earlier reply instead of sending a new one.
+> **Tip**: Use `context.editOrReply()` instead of `context.reply()`. With `activateOnEdits: true` on the `CommandClient`, a user editing their message runs the command again, and it edits its earlier reply instead of sending a new one. Edits only count within `maxEditDuration` of the message being sent (5 minutes by default).
 
 ## Command classes and folders
 
@@ -427,10 +451,13 @@ module.exports = RollCommand;
 ```ts run.ts
 import { CommandClient } from 'detritus-client';
 
-const commandClient = new CommandClient(process.env.TOKEN!, {prefix: '!!'});
+const commandClient = new CommandClient(process.env.TOKEN!, {
+  prefix: '!!',
+  gateway: {intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT']},
+});
 
 (async () => {
-  // paths are relative to the calling file
+  // paths are relative to the file the process was started with, pass {isAbsolute: true} to give a full path
   await commandClient.addMultipleIn('./commands');
   await commandClient.run();
 })();
@@ -439,14 +466,19 @@ const commandClient = new CommandClient(process.env.TOKEN!, {prefix: '!!'});
 ```js run.js
 const { CommandClient } = require('detritus-client');
 
-const commandClient = new CommandClient(process.env.TOKEN, {prefix: '!!'});
+const commandClient = new CommandClient(process.env.TOKEN, {
+  prefix: '!!',
+  gateway: {intents: ['ALL_UNPRIVILEGED', 'MESSAGE_CONTENT']},
+});
 
 (async () => {
-  // paths are relative to the calling file
+  // paths are relative to the file the process was started with, pass {isAbsolute: true} to give a full path
   await commandClient.addMultipleIn('./commands');
   await commandClient.run();
 })();
 ```
+
+Only `.js`, `.cjs` and `.mjs` files are loaded, so compile TypeScript commands first. `.ts` files are only loaded when running under ts-node.
 
 A shared base class is a good place for handlers every command needs, like formatting `onTypeError` the same way everywhere.
 
@@ -547,7 +579,7 @@ interactionClient.add({
 - Followups (`context.createMessage()`) and edits wait for the initial response to finish, so a followup right after a deferral fills the loading message.
 - `addMultipleIn('./commands')` works here too, with classes extending `Interaction.InteractionCommand`.
 
-The same hooks as prefix commands exist (`onBefore`, `onCancel`, `onRunError`, `onValueError`, ...), plus `permissions` / `permissionsClient` checks and `onDmBlocked` for `disableDm` commands.
+The same hooks as prefix commands exist (`onBefore`, `onCancel`, `onRunError`, ...), along with the same `permissions` / `permissionsClient` checks and `onDmBlocked` for `disableDm` commands. One name differs: argument errors call `onValueError` here, where prefix commands call `onTypeError`.
 
 ### Command permissions
 
@@ -571,7 +603,7 @@ async onBefore(context) {
 }
 ```
 
-- The cache (`cache: {applicationCommandPermissions: true}`) starts empty. `fill(guildId)` fetches a server once, callers asking at the same time share the request, and gateway updates keep it current after that. A new session clears it.
+- The cache is on by default and starts empty. With it turned off (`cache: {applicationCommandPermissions: false}`, or `cache: false`) `fill()` does nothing and `isAllowed()` allows everyone. `fill(guildId)` fetches a server once, callers asking at the same time share the request, and gateway updates keep it current after that. A new session clears it.
 - A command with its own settings ignores the app-wide ones, like Discord does. Administrators are always allowed, and a server with nothing cached allows everything.
 - A server that installed the bot without the `applications.commands` scope fails `fill()` every time until it reinstalls the bot. Remember those failures for a while instead of fetching again on every command.
 
@@ -731,7 +763,7 @@ Pass `cache: false` to disable every cache, useful for a bot that only answers i
 
 ## Voice
 
-Join a channel with `client.voiceConnect()` (or `channel.join()` on a voice channel). You get back the `VoiceConnection` and whether it's new or was reused.
+Join a channel with `client.voiceConnect()` (or `channel.join({})` on a voice channel, in TypeScript the result is only typed when you pass an options object). You get back the `VoiceConnection` and whether it's new or was reused.
 
 ```js
 const voice = await client.voiceConnect(guildId, channelId, {receive: true});
@@ -759,7 +791,7 @@ Voice needs `@snazzah/davey` for DAVE end-to-end encryption, and an Opus package
 
 Everything the high-level client does is available underneath it:
 
-- `client.rest` is a REST client with the same methods as `detritus-client-rest`'s `Client` (like `createMessage` or `fetchGuild`), but it returns structures instead of raw objects. The raw client is at `client.rest.raw`. Its events come through the client as `restRequest`, `restResponse` and `restTokenUnauthorized` (once per shard when the token gets a `401` with `haltOnUnauthorized` on).
+- On a `ShardClient`, `client.rest` is a REST client with the same methods as `detritus-client-rest`'s `Client` (like `createMessage` or `fetchGuild`), but it returns structures instead of raw objects. The raw client is at `client.rest.raw`. Its events come through the client as `restRequest`, `restResponse` and `restTokenUnauthorized` (once per shard when the token gets a `401` with `haltOnUnauthorized` on). On a `ClusterClient`, `rest` is the raw `detritus-client-rest` client itself, and so is `commandClient.rest` when the command client wraps a cluster (the default). Use a shard's `rest` or `context.rest` to get structures.
 - `client.gateway` is the `detritus-client-socket` gateway connection, for things like `setPresence()` or `requestGuildMembers()`.
 - `GatewayRawEvents` describes the raw payloads, before they're turned into structures.
 

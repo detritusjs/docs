@@ -2,14 +2,14 @@
   "_comment": "Fallback one-line descriptions, used when a symbol has no doc comment in the source. Keys are qualified names.",
   "client": {
     "ShardClient": "A single connection to Discord's gateway, with REST access and caches for everything it receives. Every other client is built from these.",
-    "ClusterClient": "Runs several `ShardClient`s inside one process and forwards all of their events, adding the `shard` each one came from.",
+    "ClusterClient": "Runs several `ShardClient`s inside one process and forwards their events (all but `ready`, which it emits once itself), adding the `shard` each one came from.",
     "CommandClient": "Wraps a `ClusterClient` (or `ShardClient`) and runs prefix commands from incoming messages.",
     "InteractionCommandClient": "Wraps a `ClusterClient` (or `ShardClient`), keeps your application commands in sync with Discord, and runs them when used.",
     "ClusterManager": "Spawns and supervises child processes, each running a `ClusterClient` over a range of shards.",
     "AudioMixer": "Mixes decoded voice audio from several users into one PCM stream.",
     "Collections": "The caches attached to a `ShardClient`, like `client.guilds` and `client.messages`.",
     "Command": "Classes and types for prefix commands run by the `CommandClient`.",
-    "CommandRatelimit": "Ratelimiting for commands, per user, channel or guild.",
+    "CommandRatelimit": "Ratelimiting for commands, per user, channel or guild, or by a key from your own function.",
     "Constants": "Enums and constants for Discord's API and the library's own events.",
     "Endpoints": "Route paths and URL builders, re-exported from `detritus-client-rest`.",
     "GatewayClientEvents": "The payload passed to each client event listener, like `messageCreate` or `guildUpdate`.",
@@ -20,7 +20,7 @@
     "Structures": "Typed, cached objects built from Discord's payloads, like `Message`, `Guild` and `User`, with helpers for the endpoints that act on them.",
     "Utils": "Builders for embeds, components and modals, plus markup, permission and regex helpers.",
     "Utils.Markup": "Format and escape text with Discord's markdown.",
-    "Utils.PermissionTools": "Check and combine permission bitfields.",
+    "Utils.PermissionTools": "Check permission bitfields.",
     "Utils.Embed": "Build a message embed with chainable setters.",
     "Utils.Components": "A message's component rows, with `run` callbacks that are called when a component is used.",
     "Utils.InteractionModal": "A modal form whose `run` callback gets the submitted values.",
@@ -37,7 +37,7 @@
     "Endpoints": "Every API route path, plus URL builders for the CDN, invites, gifts and links.",
     "RequestTypes": "The options objects each `Client` method takes.",
     "ResponseTypes": "Types for some method results.",
-    "RestClientEvents": "Payloads for the `request`, `response`, `ratelimited` and `invalidRequestWarning` events.",
+    "RestClientEvents": "Payloads for the `request`, `response`, `ratelimited`, `invalidRequestWarning` and `tokenUnauthorized` events.",
     "Utils": "Small helpers used by the client."
   },
   "client-socket": {
@@ -61,7 +61,7 @@
     "ClientOptions": "Options for a `Client`."
   },
   "utils": {
-    "BaseCollection": "A `Map` with array-style helpers, an optional size limit (least recently used are evicted first) and optional expiry.",
+    "BaseCollection": "A Map-like collection with array-style helpers, an optional size limit (least recently used are evicted first) and optional expiry.",
     "BaseCollectionMixin": "The array-style helpers shared by collections.",
     "BaseSet": "A `Set` with array-style helpers.",
     "EventSpewer": "An event emitter whose `subscribe()` returns a removable subscription.",

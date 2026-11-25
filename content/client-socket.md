@@ -17,15 +17,17 @@ A pure-TypeScript, low-level wrapper for Discord's Gateway and Voice connections
 ## Installation
 
 ```bash
-npm install detritus-client-socket
+npm install detritus-client-socket@beta
 ```
+
+The version this guide covers is published under npm's `beta` tag. `latest` is still the old 0.8.3.
 
 Optional packages add features:
 
 | Package | What it enables |
 | --- | --- |
 | `@snazzah/davey` (`^0.2.0`) | **Required for voice.** Discord has required end-to-end encryption (DAVE) since March 1st, 2026. Versions before 0.2.0 won't work. |
-| `sodium-native` or `libsodium-wrappers` | The `aead_xchacha20_poly1305_rtpsize` voice encryption fallback. The default `aead_aes256_gcm_rtpsize` is built into Node. |
+| `sodium-native` or `libsodium-wrappers` | A faster `aead_xchacha20_poly1305_rtpsize`. Both voice encryption modes already run on Node's own crypto, so this is optional. `aead_aes256_gcm_rtpsize` is still picked whenever the voice server offers it, pass `forceMode` to use the sodium one. |
 | `erlpack` | The `etf` encoding, which is smaller and faster to decode than JSON. |
 | `bufferutil` | Faster masking of the frames `ws` sends, `ws` picks it up automatically. |
 
@@ -81,7 +83,7 @@ socket.connect('wss://gateway.discord.gg/');
 
 The socket reconnects and resumes on its own (`autoReconnect`, on by default). Call `socket.kill()` to close it for good.
 
-The close code decides whether the next connection resumes or identifies. `socket.disconnect()` closes with `1000` by default, which drops the session (session id, sequence and resume url) and doesn't reconnect on its own. Calling `socket.connect()` after it identifies from scratch, and Discord sends a new `READY` followed by a `GUILD_CREATE` for every guild. Any other code keeps the session, so the next connection resumes and only replays the events that were missed.
+The close code decides whether the next connection resumes or identifies. `socket.disconnect()` closes with `1000` by default, which drops the session (session id, sequence and resume url) and doesn't reconnect on its own. Calling `socket.connect()` after it identifies from scratch, and Discord sends a new `READY` followed by a `GUILD_CREATE` for every guild. Codes `1000`, `4007` and `4009` drop the session. `4004`, `4010`, `4011`, `4012`, `4013` and `4014` kill the socket. Any other code keeps the session, so the next connection resumes and only replays the events that were missed.
 
 ```js
 // restart the shard with a new session
@@ -99,8 +101,9 @@ socket.connect();
 | `shardId`, `shardCount` | Which shard this socket is. |
 | `largeThreshold` | Member count above which guilds arrive without their offline members. |
 | `presence` | The presence sent with the identify payload. |
-| `disabledEvents` | Dispatch names to drop before they're emitted. |
-| `reconnectDelay`, `reconnectMax` | How long to wait between reconnects and how many to try. |
+| `disabledEvents` | Only stored. It is kept for `detritus-client`, which does the filtering. A bare socket still emits every packet. |
+| `reconnectDelay`, `reconnectMax` | How long to wait between reconnects and how many to try in a row before the socket is killed (default `5000` and `5`). The wait doubles with each try, up to 60 seconds. `Infinity` never gives up. |
+| `voiceReconnectDelay`, `voiceReconnectMax` | The same for each voice connection, separate from the main gateway's (default `5000` and `5`). After `voiceReconnectMax` tries the connection asks Discord for a new voice server, and after that many more it is killed. |
 | `onIdentifyCheck` | Called before identifying. Return `false` to hold off and call `socket.identify()` yourself later, for example to share the identify ratelimit across processes. |
 
 ## Sending gateway commands
@@ -120,7 +123,7 @@ socket.voiceStateUpdate(guildId, channelId, {selfDeaf: true});
 
 Anything else can be sent raw with `socket.send(op, data)`, using `Constants.GatewayOpCodes`.
 
-`send()` takes a callback as its third argument, and the callback always runs exactly once. It gets no error once the packet was written. If the packet was dropped, because the socket wasn't connected, was killed, or reset before the packet's turn came, it gets an error saying why. A dropped packet isn't sent again after a reconnect.
+`send()` takes a callback as its third argument, and the callback runs once, when the packet was written or dropped. It gets no error once the packet was written. A `send()` made while the socket is disconnected isn't dropped. It waits in the queue and goes out after the next `ready`. If the packet was dropped, because the socket was killed or the session ended without a resume before the packet's turn came, it gets an error saying why. A dropped packet isn't sent again after a reconnect.
 
 ```js
 socket.send(Constants.GatewayOpCodes.PRESENCE_UPDATE, presence, (error) => {
@@ -132,18 +135,24 @@ socket.send(Constants.GatewayOpCodes.PRESENCE_UPDATE, presence, (error) => {
 
 ## Voice
 
-`voiceConnect()` sends the voice state update, waits for the voice server, and resolves with a `Media.Socket`. Its `transportReady` event fires with the `MediaUdp.Socket` once audio can flow, and the `media.transportReady` getter says whether it still can (it goes `false` while reconnecting). In an end-to-end encrypted call, frames are dropped until `media.dave.canEncrypt`, when the call's sending key arrives.
+`voiceConnect()` sends the voice state update and resolves with a `Media.Socket` as soon as Discord answers with our voice state or the voice server, whichever comes first. The voice websocket isn't open yet at that point. Its `transportReady` event fires with the `MediaUdp.Socket` once audio can flow, and the `media.transportReady` getter says whether it still can (it stays `true` through a reconnect that resumes, and goes `false` when the voice session starts over). In an end-to-end encrypted call, frames are dropped until `media.dave.canEncrypt`, when the call's sending key arrives.
 
 ```ts
-import { Constants, Gateway } from 'detritus-client-socket';
+import { Constants, Gateway, Media } from 'detritus-client-socket';
 
 const socket = new Gateway.Socket(process.env.TOKEN!, {compress: true});
 
+let current: null | Media.Socket = null;
 socket.on('ready', async () => {
   const media = await socket.voiceConnect(guildId, channelId, {receive: true});
   if (!media) {
     throw new Error('Failed to join the voice channel');
   }
+  if (media === current) {
+    // `ready` also fires after a resume, this media socket is already set up
+    return;
+  }
+  current = media;
   media.on('warn', console.error);
 
   let isSetup = false;
@@ -177,11 +186,17 @@ const { Constants, Gateway } = require('detritus-client-socket');
 
 const socket = new Gateway.Socket(process.env.TOKEN, {compress: true});
 
+let current = null;
 socket.on('ready', async () => {
   const media = await socket.voiceConnect(guildId, channelId, {receive: true});
   if (!media) {
     throw new Error('Failed to join the voice channel');
   }
+  if (media === current) {
+    // `ready` also fires after a resume, this media socket is already set up
+    return;
+  }
+  current = media;
   media.on('warn', console.error);
 
   let isSetup = false;
@@ -227,6 +242,8 @@ const encoder = new OpusEncoder(mixer.format.sampleRate, mixer.format.channels);
 mixer.on('data', (frame: Buffer) => {
   transport.sendAudioFrame(encoder.encode(frame));
 });
+// nothing is mixed or emitted until the mixer is started
+mixer.start();
 ```
 
 ```js
@@ -240,6 +257,8 @@ const encoder = new OpusEncoder(mixer.format.sampleRate, mixer.format.channels);
 mixer.on('data', (frame) => {
   transport.sendAudioFrame(encoder.encode(frame));
 });
+// nothing is mixed or emitted until the mixer is started
+mixer.start();
 ```
 
 The full version, with per-user decoders and silence handling, is in `examples/ts/voice-mix-repeat.ts` in the repository.

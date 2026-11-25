@@ -14,8 +14,10 @@ A pure-TypeScript library for just Discord's REST API. Every endpoint is a metho
 ## Installation
 
 ```bash
-npm install detritus-client-rest
+npm install detritus-client-rest@beta
 ```
+
+The version this guide covers is published under npm's `beta` tag. `latest` is still the old 0.10.5.
 
 It needs **Node 22.19 or newer**, since it sends requests through `detritus-rest` (undici).
 
@@ -128,7 +130,7 @@ The client tracks ratelimit buckets from Discord's headers and waits automatical
 | `bucketsExpireIn` | 1 hour | How long to remember a route's bucket. |
 | `clientsideChecks` | `true` | Validate arguments before sending. |
 
-A failed request rejects with an `HTTPError`. When Discord sent a JSON error body, it's a `DiscordHTTPError` with Discord's error `code`, the per-field `errors`, the `raw` body and the `response`:
+A failed request rejects with an `HTTPError`. When Discord sent a JSON error body, it's a `DiscordHTTPError` with Discord's error `code`, the per-field `errors`, the `raw` body and the `response`. Both classes are imported from `detritus-client-rest/lib/errors`, not from the package root:
 
 ```ts
 try {
@@ -154,7 +156,7 @@ try {
 }
 ```
 
-A request the client refuses to send, without asking Discord, rejects with an error whose `reason` says why, and `retryAfter` in milliseconds when it's waiting on a ratelimit. The reasons are in `Constants.RefusalReasons`:
+A request the client refuses to send rejects with a `RequestRefusedError`, also from `detritus-client-rest/lib/errors`. Its `reason` says why, and `retryAfter` is in milliseconds when it's waiting on a ratelimit. Most refusals happen before anything is sent to Discord, but `ratelimitedTooLong` can also come after a `429`, when the wait Discord asks for is too long. The reasons are in `Constants.RefusalReasons`:
 
 | `reason` | When |
 | --- | --- |
@@ -215,7 +217,7 @@ Payload shapes are in `RestClientEvents`, and the event names are in `Constants.
 
 ## Custom requests
 
-For anything without a method, call `request()` with a route. Using a route instead of a full URL keeps ratelimit bucketing correct, because the bucket is keyed on the path template, not the filled-in ids.
+For anything without a method, call `request()` with a route. The ratelimit bucket comes from the route's method, its path template and the major ids in `params` (`channelId`, `guildId`, `interactionId`, `webhookId` and `webhookToken`), so pass a route with `params` instead of a filled-in URL. A request given only a URL gets no route bucket.
 
 ```ts
 import { Client, Endpoints } from 'detritus-client-rest';
